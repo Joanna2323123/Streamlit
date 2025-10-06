@@ -22,11 +22,11 @@ st.write(
 )
 
 # --- Configuração da Chave de API (Método Seguro) ---
-# O código tentará buscar a chave do arquivo de segredos do Streamlit.
+# O código tentará buscar a chave do sistema de segredos do Streamlit.
 try:
     google_api_key = st.secrets["GOOGLE_API_KEY"]
 except (KeyError, FileNotFoundError):
-    st.error("Chave de API do Google não encontrada. Verifique se o arquivo .streamlit/secrets.toml existe e está configurado corretamente.")
+    st.error("Chave de API do Google não encontrada. Por favor, configure-a nos 'Secrets' do seu aplicativo no Streamlit Cloud.")
     st.stop()
 
 
@@ -120,7 +120,7 @@ if st.session_state.df is not None:
                 fig = plt.gcf()
                 if len(fig.get_axes()) > 0:
                     st.write("---")
-                    st.subheader("Gráfico Gerado")
+                    st.subheader("📊 Gráfico Gerado")
                     st.pyplot(fig)
 
             except Exception as e:
