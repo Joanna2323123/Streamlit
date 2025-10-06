@@ -12,10 +12,9 @@ from langchain_experimental.agents import create_pandas_dataframe_agent
 # --- Configuração da Página do Streamlit ---
 st.set_page_config(
     page_title="Analisador de CSV com Gemini",
-    page_icon="🤖",
     layout="wide"
 )
-st.title("🤖 Análise de Dados com Agente Gemini")
+st.title("Análise de Dados com Agente Gemini")
 st.write(
     "Faça o upload de um arquivo `.zip` contendo um ou mais CSVs. "
     "O agente usará o modelo Gemini do Google para responder perguntas sobre seus dados e gerar visualizações."
@@ -72,7 +71,7 @@ if st.session_state.df is not None:
     )
 
     if user_question:
-        with st.spinner("O Agente Gemini está pensando... 🧠"):
+        with st.spinner("Paciência... Estou usando o cérebro..."):
             try:
                 llm = ChatGoogleGenerativeAI(
                     model="gemini-2.5-pro",
@@ -114,16 +113,17 @@ if st.session_state.df is not None:
                 response = agent.invoke({"input": user_question})
                 output_text = response.get("output", "Não foi possível gerar uma resposta.")
 
-                st.success("✅ Resposta do Agente:")
+                st.success("Resposta do Agente:")
                 st.write(output_text)
                 
                 fig = plt.gcf()
                 if len(fig.get_axes()) > 0:
                     st.write("---")
-                    st.subheader("📊 Gráfico Gerado")
+                    st.subheader("Gráfico Gerado")
                     st.pyplot(fig)
 
             except Exception as e:
                 st.error(f"Ocorreu um erro durante a execução do agente: {e}")
 else:
     st.info("Aguardando o upload de um arquivo .zip para iniciar a análise.")
+
