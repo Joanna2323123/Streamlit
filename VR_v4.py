@@ -75,7 +75,7 @@ if st.session_state.df is not None:
         with st.spinner("O Agente Gemini está pensando... 🧠"):
             try:
                 llm = ChatGoogleGenerativeAI(
-                    model="gemini-2.5-pro",
+                    model="gemini-2.5-flash",
                     temperature=0,
                     google_api_key=google_api_key
                 )
@@ -127,6 +127,7 @@ if st.session_state.df is not None:
                 st.error(f"Ocorreu um erro durante a execução do agente: {e}")
 else:
     st.info("Aguardando o upload de um arquivo .zip para iniciar a análise.")
+
 
 
 
