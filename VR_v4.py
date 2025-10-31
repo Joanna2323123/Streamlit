@@ -83,8 +83,7 @@ if st.session_state.df is not None:
                 # --- INSTRUÇÕES AVANÇADAS PARA O AGENTE ANALISTA ---
                 # --- INSTRUÇÕES AVANÇADAS PARA O AGENTE (MAIS DIRETO - VERSÃO NEXUS) ---
                 AGENT_PREFIX = """
-                Você é um agente especialista em análise de dados. Sua principal função é fornecer insights através de visualizações. Seja direto e robusto.
-
+                Você é um agente especialista em análise de dados. Sua principal função é fornecer insights através de visualizações. 
                 **SUAS REGRAS DE COMPORTAMENTO:**
 
                 1.  **Análise de Frequência:**
@@ -98,10 +97,7 @@ if st.session_state.df is not None:
                     * Se o usuário perguntar sobre "correlação", sua resposta principal DEVE SER um **heatmap** da matriz de correlação. Não mostre a matriz de correlação em texto.
 
                 4.  **REGRA GERAL - PRIORIZE O VISUAL:**
-                    * Sempre que uma pergunta puder ser mais bem respondida com um gráfico (distribuições, comparações, tendências, correlações), **PRIORIZE** a criação de uma visualização como a resposta principal. O objetivo é ser uma ferramenta de EDA gráfica.
-
-                5.  **FOCO:** Responda apenas o que foi perguntado.
-            
+                    * Sempre que uma pergunta puder ser mais bem respondida com um gráfico (distribuições, comparações, tendências, correlações), **PRIORIZE** a criação de uma visualização como a resposta principal. O objetivo é ser uma ferramenta de EDA gráfica.            
                 """
 
                 agent = create_pandas_dataframe_agent(
@@ -131,6 +127,7 @@ if st.session_state.df is not None:
                 st.error(f"Ocorreu um erro durante a execução do agente: {e}")
 else:
     st.info("Aguardando o upload de um arquivo .zip para iniciar a análise.")
+
 
 
 
