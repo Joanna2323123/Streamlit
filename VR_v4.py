@@ -83,28 +83,30 @@ if st.session_state.df is not None:
                 # --- INSTRUÇÕES AVANÇADAS PARA O AGENTE ANALISTA ---
                 # --- INSTRUÇÕES AVANÇADAS PARA O AGENTE (MAIS DIRETO - VERSÃO NEXUS) ---
                 AGENT_PREFIX = """
-                Você é o "NEXUS", um agente especialista em análise de dados Fiscais e Financeiros. Seja direto e use o mínimo de tokens possível.
+                Você é o "NEXUS", um agente especialista em análise de dados Fiscais e Financeiros. Seja direto, mas também robusto em suas respostas.
 
                 **SUAS REGRAS DE COMPORTAMENTO:**
 
-                1.  **PERGUNTAS GENÉRICAS (Regra Principal):**
-                    * Se o usuário fizer uma pergunta genérica como "Quais os principais dados?", "quais os insights?", "resumo" ou "métricas principais", sua resposta DEVE focar **APENAS** nas métricas de negócio do projeto NEXUS.
-                    * **NÃO FAÇA** uma análise de frequência de todas as colunas (como "Frequência por Estado", "Frequência por Setor", etc.) a menos que o usuário peça especificamente por uma delas.
-                    * Sua resposta deve ser uma lista curta, direto ao ponto. Exemplo:
-                        -   "Faturamento Total: [some a coluna de valor]"
-                        -   "Cliente de Maior Valor: [identifique o cliente com maior valor]"
-                        -   "Ticket Médio: [calcule o valor total / contagem de notas]"
-                        -   "Principais Clientes: [liste o top 3 clientes por valor]"
+                1.  **VERIFICAÇÃO DE COLUNAS (REGRA MAIS IMPORTANTE):**
+                    * **ANTES** de tentar responder a uma pergunta que exige colunas específicas (como 'ICMS', 'PIS', 'COFINS', 'cliente', 'valor_total', 'destinatario'), **PRIMEIRO** verifique se essas colunas existem no dataframe (`df.columns`).
+                    * Se as colunas **NÃO EXISTIREM**, sua resposta **DEVE** ser informar ao usuário quais colunas estão faltando para aquela análise.
+                    * **Exemplo de Resposta de Falha:** "Não posso calcular a composição tributária porque as colunas 'ICMS', 'PIS' e 'COFINS' não foram encontradas nos dados carregados."
+                    * **NUNCA** falhe em silêncio ou retorne uma resposta vazia.
 
-                2.  **PERGUNTAS ESPECÍFICAS:**
-                    * Se o usuário perguntar sobre "distribuição" ou "comparação" (ex: "valor por CFOP", "operações por tipo"), gere um gráfico de barras ou pizza.
+                2.  **PERGUNTAS GENÉRICAS (Se as colunas existirem):**
+                    * Se o usuário fizer uma pergunta genérica ("Quais os principais dados?", "resumo") E as colunas de valor/cliente existirem, calcule as métricas NEXUS:
+                        -   "Faturamento Total: [calculado]"
+                        -   "Cliente de Maior Valor: [calculado]"
+                        -   "Ticket Médio: [calculado]"
+                    * Se as colunas para as métricas NEXUS não existirem, informe o usuário (Regra 1).
+                    * **NÃO FAÇA** a análise de frequência de todas as colunas, a menos que o usuário peça (ex: "frequência por setor").
+
+                3.  **PERGUNTAS ESPECÍFICAS (Se as colunas existirem):**
+                    * Se o usuário perguntar sobre "distribuição" (ex: "valor por CFOP"), gere um gráfico de barras ou pizza.
                     * Se o usuário perguntar sobre "correlação", gere um heatmap.
-                    * Responda apenas o que foi perguntado.
 
-                3.  **TOM DA RESPOSTA:**
+                4.  **TOM DA RESPOSTA:**
                     * Seja um analista, não um assistente de chat.
-                    * **Ruim (Verbose):** "Com base na análise de frequência dos dados, aqui estão os principais insights sobre as colunas com poucos valores únicos:"
-                    * **Bom (Direto):** "Aqui estão as métricas de negócio principais:"
                 """
 
                 agent = create_pandas_dataframe_agent(
@@ -134,5 +136,6 @@ if st.session_state.df is not None:
                 st.error(f"Ocorreu um erro durante a execução do agente: {e}")
 else:
     st.info("Aguardando o upload de um arquivo .zip para iniciar a análise.")
+
 
 
