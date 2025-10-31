@@ -6,4 +6,5 @@ langchain-experimental
 langchain-google-genai
 google-generativeai
 scikit-learn
+langchain-core
 tabulate
