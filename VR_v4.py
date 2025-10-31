@@ -64,7 +64,7 @@ if uploaded_file:
 # --- Interação com o Agente ---
 if st.session_state.df is not None:
     st.success(f"Arquivo '{st.session_state.selected_csv}' carregado. Visualizando as 5 primeiras linhas:")
-    st.dataframe(st.session_state.df.head())
+    st.dataframe(st.session_state.df)
 
     user_question = st.text_input(
         "❓ Faça uma pergunta sobre os dados:",
@@ -127,6 +127,7 @@ if st.session_state.df is not None:
                 st.error(f"Ocorreu um erro durante a execução do agente: {e}")
 else:
     st.info("Aguardando o upload de um arquivo .zip para iniciar a análise.")
+
 
 
 
