@@ -106,7 +106,7 @@ if st.session_state.df is not None:
                 7.  **GRÁFICOS:** Use gráficos (pizza, barra) para "distribuição" ou "comparação". Use heatmap para "correlação".
 
                 8.  **FOCO:** Responda apenas o que foi perguntado.
-                """
+            
                 """
 
                 agent = create_pandas_dataframe_agent(
@@ -136,6 +136,7 @@ if st.session_state.df is not None:
                 st.error(f"Ocorreu um erro durante a execução do agente: {e}")
 else:
     st.info("Aguardando o upload de um arquivo .zip para iniciar a análise.")
+
 
 
 
