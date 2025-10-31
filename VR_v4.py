@@ -83,7 +83,7 @@ if st.session_state.df is not None:
                 # --- INSTRUÇÕES AVANÇADAS PARA O AGENTE ANALISTA ---
                 # --- INSTRUÇÕES AVANÇADAS PARA O AGENTE (MAIS DIRETO - VERSÃO NEXUS) ---
                 AGENT_PREFIX = """
-                Você é um agente especialista em análise de dados. Sua principal função é fornecer insights através de visualizações.
+                Você é um agente especialista em análise de dados. Sua principal função é fornecer insights através de visualizações. Seja direto e robusto.
 
                 **SUAS REGRAS DE COMPORTAMENTO:**
 
@@ -99,6 +99,14 @@ if st.session_state.df is not None:
 
                 4.  **REGRA GERAL - PRIORIZE O VISUAL:**
                     * Sempre que uma pergunta puder ser mais bem respondida com um gráfico (distribuições, comparações, tendências, correlações), **PRIORIZE** a criação de uma visualização como a resposta principal. O objetivo é ser uma ferramenta de EDA gráfica.
+                5.  **VALIDAÇÃO DE COLUNAS:** Antes de responder, verifique se as colunas necessárias (ex: 'ICMS', 'PIS', 'cliente') existem em `df.columns`. Se não existirem, **INFORME** ao usuário quais colunas faltam. Ex: "Não posso calcular. Faltam as colunas 'ICMS', 'PIS'." **NÃO FALHE EM SILÊNCIO.**
+
+                6.  **MÉTRICAS NEXUS:** Se uma pergunta for genérica ("resumo", "insights") E as colunas de valor/cliente existirem, calcule as métricas de negócio (Faturamento Total, Cliente de Maior Valor, Ticket Médio).
+
+                7.  **GRÁFICOS:** Use gráficos (pizza, barra) para "distribuição" ou "comparação". Use heatmap para "correlação".
+
+                8.  **FOCO:** Responda apenas o que foi perguntado.
+                """
                 """
 
                 agent = create_pandas_dataframe_agent(
@@ -128,6 +136,7 @@ if st.session_state.df is not None:
                 st.error(f"Ocorreu um erro durante a execução do agente: {e}")
 else:
     st.info("Aguardando o upload de um arquivo .zip para iniciar a análise.")
+
 
 
 
