@@ -70,7 +70,8 @@ if uploaded_files:
         elif excel_files:
             uploaded_file = excel_files[0]
             st.session_state.selected_csv = uploaded_file.name
-            st.session_state.df = pd.read_excel(uploaded_file)
+            # ⚙️ Necessário ter o pacote openpyxl instalado
+            st.session_state.df = pd.read_excel(uploaded_file, engine="openpyxl")
 
         # PDFs múltiplos
         elif pdf_files:
@@ -88,7 +89,7 @@ if st.session_state.df is not None:
 
     user_question = st.text_input(
         "Faça uma pergunta sobre os dados:",
-        placeholder="Exemplo: Qual a correlação entre as variáveis?"
+        placeholder="Exemplo: Qual o lucro líquido total? Quais os maiores custos? Como está o desempenho financeiro?"
     )
 
     if user_question:
@@ -101,12 +102,18 @@ if st.session_state.df is not None:
                 )
 
                 AGENT_PREFIX = """
-                Você é um agente especialista em análise de dados. Sua principal função é fornecer insights através de visualizações. 
-                **Regras:**
-                1. Para "valores frequentes", use value_counts() em colunas categóricas (<25 valores únicos).
-                2. Para "variabilidade" ou "distribuição", use histograma e boxplot.
-                3. Para "correlação", gere um heatmap.
-                4. Sempre que possível, priorize gráficos ao texto.
+                Você é um agente especialista em CONTABILIDADE, ADMINISTRAÇÃO e ANÁLISE DE DADOS.
+                Atua como um Cientista Contábil e Administrador Financeiro, capaz de interpretar planilhas empresariais,
+                demonstrativos, balanços, e dados de custos e receitas.
+                
+                **Regras e Comportamento:**
+                1. Sempre apresente análises de forma clara e gerencial, explicando como um consultor contábil faria.
+                2. Use raciocínio contábil e administrativo em perguntas sobre lucro, despesas, impostos, margem e desempenho.
+                3. Para “valores frequentes”, use value_counts() em colunas categóricas (<25 valores únicos).
+                4. Para “variabilidade” ou “distribuição”, gere histograma e boxplot.
+                5. Para “correlação”, gere heatmap.
+                6. Para “tendência” ou “evolução”, gere gráfico de linha (lineplot).
+                7. Priorize gráficos e tabelas antes do texto. Seja direto e técnico, com vocabulário contábil e gerencial.
                 """
 
                 agent = create_pandas_dataframe_agent(
@@ -123,13 +130,13 @@ if st.session_state.df is not None:
                 response = agent.invoke({"input": user_question})
                 output_text = response.get("output", "Não foi possível gerar uma resposta.")
 
-                st.success("Resposta do Agente:")
+                st.success("📊 Resposta do Agente:")
                 st.write(output_text)
 
                 fig = plt.gcf()
                 if len(fig.get_axes()) > 0:
                     st.write("---")
-                    st.subheader("📊 Gráfico Gerado")
+                    st.subheader("📈 Visualização Gerada")
                     st.pyplot(fig)
 
             except Exception as e:
@@ -139,7 +146,7 @@ if st.session_state.df is not None:
 elif uploaded_files and any(f.name.endswith(".pdf") for f in uploaded_files):
     user_question = st.text_input(
         "Pergunte algo sobre o texto dos PDFs:",
-        placeholder="Exemplo: Resuma o conteúdo do PDF selecionado."
+        placeholder="Exemplo: Resuma o conteúdo dos documentos fiscais."
     )
     if user_question:
         with st.spinner("O Agente está analisando o PDF..."):
@@ -157,13 +164,12 @@ elif uploaded_files and any(f.name.endswith(".pdf") for f in uploaded_files):
                         full_text += page.extract_text() or ""
 
                 response = llm.invoke(f"Responda com base neste texto:\n{full_text}\n\nPergunta: {user_question}")
-                st.success("Resposta do Agente:")
+                st.success("📘 Resposta do Agente:")
                 st.write(response.content)
             except Exception as e:
                 st.error(f"Erro ao processar o PDF: {e}")
 
 else:
     st.info("Aguardando o upload de um arquivo (.zip, .csv, .xlsx, .xls ou .pdf) para iniciar a análise.")
-
 
 
