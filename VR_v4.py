@@ -4,15 +4,11 @@ import zipfile
 import matplotlib.pyplot as plt
 from io import StringIO
 from PyPDF2 import PdfReader
-# --- LangChain / Gemini ---
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_experimental.agents import create_pandas_dataframe_agent
 
 # --- Configuração da Página ---
-st.set_page_config(
-    page_title="Analisador de Dados com Gemini",
-    layout="wide"
-)
+st.set_page_config(page_title="Analisador de Dados com Gemini", layout="wide")
 st.title("Análise de Dados com Agente Gemini")
 st.write(
     "Faça o upload de arquivos `.zip`, `.csv`, `.xlsx`, `.xls` ou `.pdf`. "
@@ -35,8 +31,8 @@ uploaded_files = st.file_uploader(
 
 if 'df' not in st.session_state:
     st.session_state.df = None
-if 'selected_csv' not in st.session_state:
-    st.session_state.selected_csv = ""
+if 'selected_file' not in st.session_state:
+    st.session_state.selected_file = ""
 
 # --- Processamento de Arquivos ---
 if uploaded_files:
@@ -46,7 +42,6 @@ if uploaded_files:
         csv_files = [f for f in uploaded_files if f.name.endswith(".csv")]
         excel_files = [f for f in uploaded_files if f.name.endswith((".xls", ".xlsx"))]
 
-        # ZIP
         if zip_files:
             uploaded_file = zip_files[0]
             with zipfile.ZipFile(uploaded_file, "r") as zip_ref:
@@ -56,24 +51,20 @@ if uploaded_files:
                     if selected_csv:
                         with zip_ref.open(selected_csv) as f:
                             stringio = StringIO(f.read().decode('utf-8'))
-                            st.session_state.df = pd.read_csv(stringio)
-                            st.session_state.selected_csv = selected_csv
+                            st.session_state.df = pd.read_csv(stringio, low_memory=False)
+                            st.session_state.selected_file = selected_csv
 
-        # CSV individual
         elif csv_files:
             uploaded_file = csv_files[0]
-            st.session_state.selected_csv = uploaded_file.name
+            st.session_state.selected_file = uploaded_file.name
             stringio = StringIO(uploaded_file.getvalue().decode('utf-8'))
-            st.session_state.df = pd.read_csv(stringio)
+            st.session_state.df = pd.read_csv(stringio, low_memory=False)
 
-        # Excel individual (.xls / .xlsx)
         elif excel_files:
             uploaded_file = excel_files[0]
-            st.session_state.selected_csv = uploaded_file.name
-            # ⚙️ Necessário ter o pacote openpyxl instalado
+            st.session_state.selected_file = uploaded_file.name
             st.session_state.df = pd.read_excel(uploaded_file, engine="openpyxl")
 
-        # PDFs múltiplos
         elif pdf_files:
             st.info("📂 PDFs carregados — perguntas textuais podem ser feitas ao modelo Gemini (sem dataframe).")
             st.session_state.df = None
@@ -84,16 +75,16 @@ if uploaded_files:
 
 # --- Interação com o Agente Gemini ---
 if st.session_state.df is not None:
-    st.success(f"Arquivo '{st.session_state.selected_csv}' carregado. Visualizando as 5 primeiras linhas:")
-    st.dataframe(st.session_state.df)
+    st.success(f"Arquivo '{st.session_state.selected_file}' carregado com sucesso.")
+    st.dataframe(st.session_state.df.head(50))
 
     user_question = st.text_input(
         "Faça uma pergunta sobre os dados:",
-        placeholder="Exemplo: Qual o lucro líquido total? Quais os maiores custos? Como está o desempenho financeiro?"
+        placeholder="Exemplo: Quais foram os maiores pagamentos? Mostre como tabela."
     )
 
     if user_question:
-        with st.spinner("O Agente Gemini está pensando..."):
+        with st.spinner("O Agente Gemini está analisando os dados..."):
             try:
                 llm = ChatGoogleGenerativeAI(
                     model="gemini-2.5-flash",
@@ -102,18 +93,14 @@ if st.session_state.df is not None:
                 )
 
                 AGENT_PREFIX = """
-                Você é um agente especialista em CONTABILIDADE, ADMINISTRAÇÃO e ANÁLISE DE DADOS.
-                Atua como um Cientista Contábil e Administrador Financeiro, capaz de interpretar planilhas empresariais,
-                demonstrativos, balanços, e dados de custos e receitas.
-                
-                **Regras e Comportamento:**
-                1. Sempre apresente análises de forma clara e gerencial, explicando como um consultor contábil faria.
-                2. Use raciocínio contábil e administrativo em perguntas sobre lucro, despesas, impostos, margem e desempenho.
-                3. Para “valores frequentes”, use value_counts() em colunas categóricas (<25 valores únicos).
-                4. Para “variabilidade” ou “distribuição”, gere histograma e boxplot.
-                5. Para “correlação”, gere heatmap.
-                6. Para “tendência” ou “evolução”, gere gráfico de linha (lineplot).
-                7. Priorize gráficos e tabelas antes do texto. Seja direto e técnico, com vocabulário contábil e gerencial.
+                Você é um Cientista Contábil e Administrador Financeiro. 
+                Analise planilhas de dados financeiros, fiscais ou empresariais em profundidade.
+
+                🔹 Regras:
+                1. Quando o usuário pedir "tabela", "listagem" ou "exemplo tabular", retorne em formato de tabela pandas (df.head(), df.groupby(), etc.).
+                2. Use `to_markdown()` apenas se a tabela for textual; caso contrário, entregue um DataFrame.
+                3. Para gráficos, use matplotlib (histograma, barras, linha, pizza).
+                4. Seja técnico, objetivo e contábil — como um analista de custos ou gestor financeiro.
                 """
 
                 agent = create_pandas_dataframe_agent(
@@ -128,10 +115,21 @@ if st.session_state.df is not None:
 
                 plt.close('all')
                 response = agent.invoke({"input": user_question})
-                output_text = response.get("output", "Não foi possível gerar uma resposta.")
+                output_text = response.get("output", "")
 
-                st.success("📊 Resposta do Agente:")
-                st.write(output_text)
+                # --- NOVO: Detecção e exibição automática de tabelas ---
+                try:
+                    # tenta converter a resposta textual em DataFrame se parecer uma tabela
+                    if "|" in output_text and "---" in output_text:
+                        table_df = pd.read_csv(StringIO(output_text.replace("|", ",")))
+                        st.write("📊 **Tabela Gerada:**")
+                        st.dataframe(table_df)
+                    else:
+                        st.success("📊 Resposta do Agente:")
+                        st.write(output_text)
+                except Exception:
+                    st.success("📊 Resposta do Agente:")
+                    st.write(output_text)
 
                 fig = plt.gcf()
                 if len(fig.get_axes()) > 0:
@@ -142,7 +140,6 @@ if st.session_state.df is not None:
             except Exception as e:
                 st.error(f"Ocorreu um erro durante a execução do agente: {e}")
 
-# --- Caso PDF selecionado para perguntas textuais ---
 elif uploaded_files and any(f.name.endswith(".pdf") for f in uploaded_files):
     user_question = st.text_input(
         "Pergunte algo sobre o texto dos PDFs:",
@@ -171,5 +168,7 @@ elif uploaded_files and any(f.name.endswith(".pdf") for f in uploaded_files):
 
 else:
     st.info("Aguardando o upload de um arquivo (.zip, .csv, .xlsx, .xls ou .pdf) para iniciar a análise.")
+
+
 
 
