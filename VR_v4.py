@@ -1,3 +1,10 @@
+import streamlit as st
+import pandas as pd
+import os
+import zipfile
+import matplotlib.pyplot as plt
+from io import StringIO
+
 # Importações necessárias do LangChain e Google
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_experimental.agents import create_pandas_dataframe_agent
@@ -155,8 +162,6 @@ if st.session_state.df is not None:
 
             except Exception as e:
                 st.error(f"Ocorreu um erro durante a execução do agente: {e}")
-
-
 
 
 
