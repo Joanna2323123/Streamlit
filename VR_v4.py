@@ -15,7 +15,7 @@ st.set_page_config(
 )
 st.title("Análise de Dados com Agente Gemini")
 st.write(
-    "Faça o upload de arquivos `.zip`, `.csv` ou `.pdf`. "
+    "Faça o upload de arquivos `.zip`, `.csv`, `.pdf`, `.xls` ou `.xlsx`. " # MODIFICADO
     "O agente usará o modelo Gemini do Google para responder perguntas sobre seus dados e gerar visualizações."
 )
 
@@ -30,8 +30,8 @@ except (KeyError, FileNotFoundError):
 
 # --- Upload ---
 uploaded_files = st.file_uploader(
-    "Envie um ou mais arquivos (.zip, .csv ou .pdf)",
-    type=["zip", "csv", "pdf"],
+    "Envie um ou mais arquivos (.zip, .csv, .pdf, .xls, .xlsx)",
+    type=["zip", "csv", "pdf", "xls", "xlsx"], # MODIFICADO
     accept_multiple_files=True
 )
 
@@ -41,13 +41,17 @@ if 'selected_csv' not in st.session_state:
     st.session_state.selected_csv = ""
 
 
-# --- Processamento de Arquivos ---
+# --- Processamento de Arquivos (Lógica MODIFICADA) ---
 if uploaded_files:
     try:
         pdf_files = [f for f in uploaded_files if f.name.endswith(".pdf")]
         zip_files = [f for f in uploaded_files if f.name.endswith(".zip")]
         csv_files = [f for f in uploaded_files if f.name.endswith(".csv")]
+        excel_files = [f for f in uploaded_files if f.name.endswith((".xls", ".xlsx"))] # NOVO
 
+        # Prioridade de processamento: ZIP > Excel > CSV
+        # O DataFrame só será definido se um desses tipos for encontrado.
+        
         # ZIP
         if zip_files:
             uploaded_file = zip_files[0]
@@ -60,15 +64,35 @@ if uploaded_files:
                             stringio = StringIO(f.read().decode('utf-8'))
                             st.session_state.df = pd.read_csv(stringio)
                             st.session_state.selected_csv = selected_csv
+        
+        # EXCEL individual <-- NOVO BLOCO
+        elif excel_files:
+            uploaded_file = excel_files[0]
+            
+            # Carrega o arquivo Excel para inspecionar as abas
+            xls = pd.ExcelFile(uploaded_file)
+            sheet_names = xls.sheet_names
+            
+            # Pergunta ao usuário qual aba ler
+            selected_sheet = st.selectbox("Selecione uma aba (sheet) do Excel:", sheet_names)
+            
+            if selected_sheet:
+                # Lê a aba específica para o DataFrame
+                st.session_state.df = pd.read_excel(uploaded_file, sheet_name=selected_sheet)
+                st.session_state.selected_csv = f"{uploaded_file.name} (Aba: {selected_sheet})"
+
         # CSV individual
         elif csv_files:
             uploaded_file = csv_files[0]
             st.session_state.selected_csv = uploaded_file.name
             stringio = StringIO(uploaded_file.getvalue().decode('utf-8'))
             st.session_state.df = pd.read_csv(stringio)
+            # A linha 'st.session_state.df = None' do seu código original foi removida, 
+            # pois era um bug que impedia a leitura de CSVs.
 
-        # PDFs múltiplos
-            st.session_state.df = None
+        # Se apenas PDFs foram enviados, st.session_state.df permanecerá None,
+        # e a lógica de análise de PDF será acionada mais abaixo.
+
     except Exception as e:
         st.error(f"Erro ao processar os arquivos: {e}")
         st.session_state.df = None
@@ -76,7 +100,7 @@ if uploaded_files:
 # --- Interação com o Agente Gemini ---
 if st.session_state.df is not None:
     st.success(f"Arquivo '{st.session_state.selected_csv}' carregado. Visualizando as 5 primeiras linhas:")
-    st.dataframe(st.session_state.df)
+    st.dataframe(st.session_state.df.head()) # Modificado para .head() para melhor visualização
 
     user_question = st.text_input(
         "Faça uma pergunta sobre os dados:",
@@ -121,7 +145,7 @@ if st.session_state.df is not None:
                 fig = plt.gcf()
                 if len(fig.get_axes()) > 0:
                     st.write("---")
-                    st.subheader("Gráfico Gerado")
+                    st.subheader("📊 Gráfico Gerado")
                     st.pyplot(fig)
 
             except Exception as e:
@@ -134,7 +158,7 @@ elif uploaded_files and any(f.name.endswith(".pdf") for f in uploaded_files):
         placeholder="Exemplo: Resuma o conteúdo do PDF selecionado."
     )
     if user_question:
-        with st.spinner("O Agente está analisando o PDF..."):
+        with st.spinner("O Agente Gemini está analisando o PDF..."):
             try:
                 llm = ChatGoogleGenerativeAI(
                     model="gemini-2.5-flash",
@@ -155,4 +179,8 @@ elif uploaded_files and any(f.name.endswith(".pdf") for f in uploaded_files):
                 st.error(f"Erro ao processar o PDF: {e}")
 
 else:
+    st.info("Aguardando o upload de um arquivo (.zip, .csv, .pdf, .xls ou .xlsx) para iniciar a análise.") # MODIFICADO
+
+else:
     st.info("Aguardando o upload de um arquivo (.zip, .csv ou .pdf) para iniciar a análise.")
+
