@@ -4,11 +4,9 @@ import zipfile
 import matplotlib.pyplot as plt
 from io import StringIO
 from PyPDF2 import PdfReader
-
 # --- LangChain / Gemini ---
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_experimental.agents import create_pandas_dataframe_agent
-
 
 # --- Configuração da Página ---
 st.set_page_config(
@@ -62,7 +60,6 @@ if uploaded_files:
                             stringio = StringIO(f.read().decode('utf-8'))
                             st.session_state.df = pd.read_csv(stringio)
                             st.session_state.selected_csv = selected_csv
-
         # CSV individual
         elif csv_files:
             uploaded_file = csv_files[0]
@@ -75,27 +72,11 @@ if uploaded_files:
             st.subheader("📄 PDFs carregados:")
             for pdf in pdf_files:
                 st.write(f"- {pdf.name}")
-
-            selected_pdf = st.selectbox(
-                "Selecione um PDF para visualizar (opcional):",
-                ["-- Nenhum --"] + [p.name for p in pdf_files]
-            )
-
-            if selected_pdf != "-- Nenhum --":
-                pdf_file = next(f for f in pdf_files if f.name == selected_pdf)
-                reader = PdfReader(pdf_file)
-                text = ""
-                for page in reader.pages:
-                    text += page.extract_text() or ""
-                st.text_area(f"📘 Conteúdo de {selected_pdf}:", text[:5000], height=300)
-
             st.session_state.df = None
             st.info("PDFs carregados — perguntas textuais podem ser feitas ao modelo Gemini (sem dataframe).")
-
     except Exception as e:
         st.error(f"Erro ao processar os arquivos: {e}")
         st.session_state.df = None
-
 
 # --- Interação com o Agente Gemini ---
 if st.session_state.df is not None:
@@ -180,6 +161,7 @@ elif uploaded_files and any(f.name.endswith(".pdf") for f in uploaded_files):
 
 else:
     st.info("Aguardando o upload de um arquivo (.zip, .csv ou .pdf) para iniciar a análise.")
+
 
 
 
