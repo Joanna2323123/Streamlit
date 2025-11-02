@@ -9,35 +9,17 @@ from io import StringIO
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_experimental.agents import create_pandas_dataframe_agent
 
-# --- 1. MUDANÇA: Configuração da Página ---
+# --- Configuração da Página (Atualizada) ---
 st.set_page_config(
-    page_title="Analisador Fiscal (NEXUS Básico)", 
-    page_icon="🧾",
+    page_title="Analisador Fiscal (NEXUS)", # MUDADO
+    page_icon="🧾", # MUDADO
     layout="wide"
-    # O Streamlit usará o tema (dark/light) do sistema do usuário.
-    # A imagem que você enviou tem um tema escuro, que será aplicado
-    # se o sistema do usuário estiver em modo escuro.
 )
-
-# --- Título e Descrição (Sem alteração) ---
-st.title("🧾 Analisador de Dados Fiscais (Versão Básica)")
+st.title("🧾 Análise de Dados Fiscais com Agente Gemini") # MUDADO
 st.write(
-    "Faça o upload do seu `.zip` com arquivos CSV de notas fiscais. "
-    "O agente Gemini irá analisar os dados e responder suas perguntas de negócio."
+    "Faça o upload de um arquivo `.zip` contendo um ou mais CSVs. "
+    "O agente usará o modelo Gemini do Google para responder perguntas sobre seus dados e gerar visualizações."
 )
-
-# --- Upload na Barra Lateral (Sem alteração) ---
-with st.sidebar:
-    st.header("Configuração")
-    uploaded_file = st.file_uploader(
-        "Faça o upload de um arquivo .zip",
-        type="zip"
-    )
-    
-    st.info(
-        "Este agente é otimizado para analisar dados fiscais. "
-        "Ele funciona melhor com colunas como 'cliente', 'valor_total', 'ICMS', 'PIS', 'COFINS', 'natureza_da_operação', 'setor', etc."
-    )
 
 # --- Configuração da Chave de API (Sem alteração) ---
 try:
@@ -46,12 +28,15 @@ except (KeyError, FileNotFoundError):
     st.error("Chave de API do Google não encontrada. Por favor, configure-a nos 'Secrets' do seu aplicativo no Streamlit Cloud.")
     st.stop()
 
-# --- 2. MUDANÇA: Inicializar o histórico do chat ---
-# Isso é essencial para o layout de chat
-if "messages" not in st.session_state:
-    st.session_state.messages = []
 
-# --- Lógica de Upload (Sem alteração na lógica, apenas no local) ---
+# --- Lógica de Upload e Seleção de Arquivo (Movido para a Barra Lateral) ---
+with st.sidebar:
+    st.header("Configuração de Upload")
+    uploaded_file = st.file_uploader(
+        "Faça o upload de um arquivo .zip",
+        type="zip"
+    )
+
 if 'df' not in st.session_state:
     st.session_state.df = None
 if 'selected_csv' not in st.session_state:
@@ -69,118 +54,182 @@ if uploaded_file:
                     selected_csv = st.selectbox("Selecione um arquivo CSV para analisar:", csv_files)
                 
                 if selected_csv:
-                    # Se o usuário trocar o CSV, limpa o chat antigo
-                    if st.session_state.selected_csv != selected_csv:
-                        st.session_state.messages = []
-                        
                     st.session_state.selected_csv = selected_csv
                     with zip_ref.open(selected_csv) as f:
                         stringio = StringIO(f.read().decode('utf-8'))
-                        st.session_state.df = pd.read_csv(stringio)
+                        # Tenta ler com 'latin1' se 'utf-8' falhar
+                        try:
+                            st.session_state.df = pd.read_csv(stringio)
+                        except UnicodeDecodeError:
+                            stringio.seek(0)
+                            st.session_state.df = pd.read_csv(stringio, encoding='latin1')
 
     except Exception as e:
         st.error(f"Erro ao processar o arquivo: {e}")
         st.session_state.df = None
 else:
-    st.info("Por favor, faça o upload de um arquivo .zip na barra lateral para começar.")
-    st.stop()
+    st.info("Aguardando o upload de um arquivo .zip na barra lateral para iniciar a análise.")
+    st.stop() # Para a execução se nenhum arquivo for carregado
 
-# --- 3. MUDANÇA: Lógica de Interação com o Agente (Totalmente Refatorada para Chat) ---
+# --- Interação com o Agente ---
 if st.session_state.df is not None:
-    st.success(f"Arquivo '{st.session_state.selected_csv}' carregado. Pré-visualização dos dados:")
-    st.dataframe(st.session_state.df) 
-
-    with st.expander("💡 Exemplos de perguntas que você pode fazer:"):
-        st.markdown("""
-        * Quais são os principais insights ou métricas de negócio?
-        * Qual o Faturamento Total?
-        * Qual o cliente com maior valor?
-        * Qual o ticket médio por nota?
-        * Qual a transação mais frequente? Compra ou venda?
-        * Me dê um gráfico de pizza dos 5 setores mais comuns.
-        * Quais insights e oportunidades de negócios esses dados podem revelar?
-        """)
+    st.success(f"Arquivo '{st.session_state.selected_csv}' carregado.")
     
-    st.subheader("Chat Interativo com IA") # Título da imagem
+    # --- 1. NOVA SEÇÃO: BALANCETE CONTÁBIL (DASHBOARD) ---
+    st.subheader("📊 Balancete Contábil (Visão Geral)")
+    
+    df = st.session_state.df
+    
+    # --- Mapeamento de Colunas (AJUSTE CONFORME SEU CSV) ---
+    # Tenta adivinhar nomes de colunas comuns para dados fiscais.
+    # Se os nomes no seu CSV forem diferentes, ajuste-os aqui.
+    COL_MAP = {
+        "total_nfe": "vNF",         # Nomes comuns: "valor_total_nfe", "valor_nota", "vNF"
+        "total_produtos": "vProd",  # Nomes comuns: "valor_total_produtos", "vProd"
+        "icms": "vICMS",            # Nomes comuns: "valor_icms", "vICMS"
+        "pis": "vPIS",              # Nomes comuns: "valor_pis", "vPIS"
+        "cofins": "vCOFINS",        # Nomes comuns: "valor_cofins", "vCOFINS"
+        "iss": "vISSQN",            # Nomes comuns: "valor_iss", "vISSQN"
+        "estado": "UF"              # Nomes comuns: "dest_uf", "estado_dest", "UF"
+    }
 
-    # Exibe o histórico de mensagens
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.write(message["content"])
-            # Nota: Esta versão simples não re-exibe gráficos do histórico.
-            # Apenas a resposta em texto é salva em st.session_state.
-
-    # Nova entrada do usuário (caixa de chat no final da página)
-    if user_question := st.chat_input("Pergunte sobre o relatório..."): # Placeholder da imagem
+    # Função auxiliar para exibir as métricas como nas imagens
+    def show_metric(df, col_key, title):
+        col_name = COL_MAP.get(col_key)
+        value = "R$ 0,00"
+        help_text = f"Coluna '{col_name}' não encontrada. Verifique os nomes no seu CSV e ajuste o 'COL_MAP' no código."
+        delta_text = "Atenção"
         
-        # Adiciona e exibe a mensagem do usuário
-        st.session_state.messages.append({"role": "user", "content": user_question})
-        with st.chat_message("user"):
-            st.write(user_question)
+        if col_name and col_name in df.columns:
+            try:
+                # Tenta converter a coluna para número, tratando erros (ex: "1.234,56")
+                numeric_col = pd.to_numeric(df[col_name].astype(str).str.replace('.', '', regex=False).str.replace(',', '.'), errors='coerce')
+                
+                if numeric_col.isnull().all():
+                    help_text = f"Coluna '{col_name}' encontrada, mas todos os valores estão nulos ou não são numéricos."
+                else:
+                    total = numeric_col.sum()
+                    value = f"R$ {total:,.2f}"
+                    help_text = f"Soma total da coluna '{col_name}'."
+                    delta_text = "Calculado"
+            except Exception as e:
+                value = "Erro"
+                help_text = f"Erro ao calcular '{col_name}': {e}"
+                delta_text = "Erro"
 
-        # Gera e exibe a resposta do Agente
-        with st.chat_message("assistant"): # Balão do assistente (lado esquerdo)
-            with st.spinner("O Agente Gemini está pensando..."):
-                try:
-                    llm = ChatGoogleGenerativeAI(
-                        model="gemini-2.5-flash", 
-                        temperature=0,
-                        google_api_key=google_api_key
-                    )
-                    
-                    # Cérebro do Agente (NEXUS) - Sem alteração
-                    AGENT_PREFIX = """
-                    Você é o "NEXUS", um agente especialista em análise de dados Fiscais e Financeiros. Seja direto, mas também robusto em suas respostas.
+        st.metric(label=title, value=value, help=help_text, 
+                  delta=delta_text if delta_text != "Calculado" else None, 
+                  delta_color="inverse" if delta_text != "Calculado" else "normal")
 
-                    **SUAS REGRAS DE COMPORTAMENTO:**
+    # Exibe as métricas principais em colunas
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        total_itens = len(df)
+        st.metric(label="Total de Itens Processados", value=total_itens, help="Número total de linhas (itens) no CSV.")
+        show_metric(df, "icms", "Valor Total de ICMS")
+        
+    with col2:
+        show_metric(df, "total_nfe", "Valor Total das NFes")
+        show_metric(df, "pis", "Valor Total de PIS")
+        
+    with col3:
+        show_metric(df, "total_produtos", "Valor Total dos Produtos")
+        show_metric(df, "cofins", "Valor Total de COFINS")
 
-                    1.  **VERIFICAÇÃO DE COLUNAS (REGRA MAIS IMPORTANTE):**
-                        * **ANTES** de tentar responder a uma pergunta que exige colunas específicas (como 'ICMS', 'PIS', 'COFINS', 'cliente', 'valor_total', 'natureza_da_operação'), **PRIMEIRO** verifique if those columns exist in `df.columns`.
-                        * Se as colunas **NÃO EXISTIREM**, sua resposta **DEVE** ser informar ao usuário quais colunas estão faltando para aquela análise.
-                        * **Exemplo de Resposta de Falha:** "Não posso calcular. As colunas 'ICIS', 'PIS' e 'COFINS' não foram encontradas nos dados."
-                        * **NÃO FALHE EM SILÊNCIO.**
+    # Métrica de ISS (separada)
+    show_metric(df, "iss", "Valor Total de ISS")
+    st.markdown("---") # Separador
 
-                    2.  **PERGUNTAS GENÉRICAS (MÉTRICAS NEXUS):**
-                        * Se o usuário fizer uma pergunta genérica ("Quais os principais dados?", "resumo", "métricas", "insights") E as colunas necessárias existirem, calcule as métricas de negócio principais:
-                            - "Faturamento Total: [some a coluna de valor]"
-                            - "Cliente de Maior Valor: [identifique o cliente com maior valor]"
-                            - "Ticket Médio: [calcule o valor total / contagem de notas]"
-                        * Se as colunas não existirem, informe o usuário (Regra 1).
+    # --- 2. NOVA SEÇÃO: ICMS POR ESTADO ---
+    with st.expander("🧾 Análise de ICMS por Estado"):
+        icms_col = COL_MAP.get("icms")
+        estado_col = COL_MAP.get("estado")
+        
+        if icms_col and estado_col and icms_col in df.columns and estado_col in df.columns:
+            try:
+                df[icms_col] = pd.to_numeric(df[icms_col].astype(str).str.replace('.', '', regex=False).str.replace(',', '.'), errors='coerce')
+                
+                # Agrupa, soma e ordena
+                icms_por_estado = df.groupby(estado_col)[icms_col].sum().sort_values(ascending=False)
+                
+                st.dataframe(icms_por_estado.map("R$ {:,.2f}".format))
+                
+                # Gráfico de barras
+                st.bar_chart(icms_por_estado)
+                
+            except Exception as e:
+                st.warning(f"Não foi possível calcular o ICMS por estado. Colunas encontradas, mas ocorreu um erro: {e}")
+        else:
+            st.info(f"Para ver o ICMS por estado, o arquivo CSV precisa ter as colunas '{icms_col}' e '{estado_col}'. (Nomes de colunas definidos no 'COL_MAP')")
+            
+    st.markdown("---")
+    
+    # --- 3. SEÇÃO EXISTENTE: CHAT COM O AGENTE (COM PREFIXO CORRIGIDO) ---
+    st.subheader("💬 Chat Interativo com Agente")
+    
+    # O placeholder foi atualizado para refletir o foco fiscal
+    user_question = st.text_input(
+        "❓ Faça uma pergunta sobre os dados:",
+        placeholder="Qual o cliente com maior valor? Qual o faturamento total?" 
+    )
+    
+    if user_question:
+        with st.spinner("O Agente Gemini está pensando..."):
+            try:
+                llm = ChatGoogleGenerativeAI(
+                    model="gemini-2.5-flash",
+                    temperature=0,
+                    google_api_key=google_api_key
+                )
+                
+                # --- 4. CORREÇÃO CRÍTICA: AGENT_PREFIX ---
+                # O seu prefixo antigo era sobre estatística.
+                # Este prefixo é focado em Análise Fiscal (NEXUS) e lida com erros.
+                AGENT_PREFIX = """
+                Você é o "NEXUS", um agente especialista em análise de dados Fiscais e Financeiros. Seja direto, mas também robusto em suas respostas.
 
-                    3.  **PERGUNTAS ESPECÍFICAS (GRÁFICOS):**
-                        * Se o usuário perguntar sobre "distribuição" ou "comparação" (ex: "valor por setor", "operações por tipo"), gere um gráfico de barras ou pizza.
-                        * Se o usuário perguntar sobre "correlação", gere um heatmap.
+                **SUAS REGRAS DE COMPORTAMENTO:**
 
-                    4.  **TOM DA RESPOSTA:**
-                        * Seja um analista de negócios, direto ao ponto.
-                    """
-                    
-                    agent = create_pandas_dataframe_agent(
-                        llm,
-                        st.session_state.df,
-                        prefix=AGENT_PREFIX,
-                        verbose=False,
-                        agent_type="openai-tools",
-                        handle_parsing_errors=True,
-                        allow_dangerous_code=True,
-                    )
-                    
-                    plt.close('all')
-                    response = agent.invoke({"input": user_question})
-                    output_text = response.get("output", "Não foi possível gerar uma resposta.")
+                1.  **VERIFICAÇÃO DE COLUNAS (REGRA MAIS IMPORTANTE):**
+                    * **ANTES** de tentar responder a uma pergunta que exige colunas específicas (como 'ICMS', 'PIS', 'COFINS', 'cliente', 'vNF', 'natureza_da_operação'), **PRIMEIRO** verifique se essas colunas existem em `df.columns`.
+                    * Se as colunas **NÃO EXISTIREM**, sua resposta **DEVE** ser informar ao usuário quais colunas estão faltando para aquela análise.
+                    * **Exemplo de Resposta de Falha:** "Não posso calcular. As colunas 'ICMS', 'PIS' e 'vNF' não foram encontradas nos dados."
+                    * **NÃO FALHE EM SILÊNCIO.**
 
-                    # Exibe a resposta em texto
-                    st.write(output_text)
-                    
-                    # Adiciona a resposta (só texto) ao histórico
-                    st.session_state.messages.append({"role": "assistant", "content": output_text})
-                    
-                    # Exibe o gráfico, se houver, dentro da mesma bolha
-                    fig = plt.gcf()
-                    if len(fig.get_axes()) > 0:
-                        st.pyplot(fig)
+                2.  **PERGUNTAS GENÉRICAS (MÉTRICAS NEXUS):**
+                    * Se o usuário fizer uma pergunta genérica ("Quais os principais dados?", "resumo", "métricas", "insights") E as colunas necessárias existirem, calcule as métricas de negócio principais (Faturamento Total, Cliente de Maior Valor, Ticket Médio).
+                    * Se as colunas não existirem, informe o usuário (Regra 1).
 
-                except Exception as e:
-                    error_message = f"Ocorreu um erro durante a execução do agente: {e}"
-                    st.error(error_message)
-                    st.session_state.messages.append({"role": "assistant", "content": error_message})
+                3.  **PERGUNTAS ESPECÍFICAS (GRÁFICOS):**
+                    * Se o usuário perguntar sobre "distribuição" ou "comparação" (ex: "valor por setor", "operações por tipo"), gere um gráfico de barras ou pizza.
+                    * Se o usuário perguntar sobre "correlação", gere um heatmap.
+
+                4.  **TOM DA RESPOSTA:**
+                    * Seja um analista de negócios, direto ao ponto.
+                """
+                
+                agent = create_pandas_dataframe_agent(
+                    llm,
+                    st.session_state.df,
+                    prefix=AGENT_PREFIX,
+                    verbose=False,
+                    agent_type="openai-tools",
+                    handle_parsing_errors=True,
+                    allow_dangerous_code=True,
+                )
+                
+                plt.close('all')
+                response = agent.invoke({"input": user_question})
+                output_text = response.get("output", "Não foi possível gerar umaVAI.")
+
+                st.success("Resposta do Agente:")
+                st.write(output_text)
+                
+                fig = plt.gcf()
+                if len(fig.get_axes()) > 0:
+                    st.write("---")
+                    st.subheader("📊 Gráfico Gerado")
+                    st.pyplot(fig)
+
+            except Exception as e:
+                st.error(f"Ocorreu um erro durante a execução do agente: {e}")
