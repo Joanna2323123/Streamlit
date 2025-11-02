@@ -42,6 +42,7 @@ if uploaded_files:
         csv_files = [f for f in uploaded_files if f.name.endswith(".csv")]
         excel_files = [f for f in uploaded_files if f.name.endswith((".xls", ".xlsx"))]
 
+        # ZIP
         if zip_files:
             uploaded_file = zip_files[0]
             with zipfile.ZipFile(uploaded_file, "r") as zip_ref:
@@ -51,20 +52,38 @@ if uploaded_files:
                     if selected_csv:
                         with zip_ref.open(selected_csv) as f:
                             stringio = StringIO(f.read().decode('utf-8'))
-                            st.session_state.df = pd.read_csv(stringio, low_memory=False)
+                            st.session_state.df = pd.read_csv(
+                                stringio, low_memory=False, encoding_errors='ignore'
+                            )
                             st.session_state.selected_file = selected_csv
 
+        # CSV individual
         elif csv_files:
             uploaded_file = csv_files[0]
             st.session_state.selected_file = uploaded_file.name
-            stringio = StringIO(uploaded_file.getvalue().decode('utf-8'))
-            st.session_state.df = pd.read_csv(stringio, low_memory=False)
+            stringio = StringIO(uploaded_file.getvalue().decode('utf-8', errors='ignore'))
+            st.session_state.df = pd.read_csv(
+                stringio, low_memory=False, encoding_errors='ignore'
+            )
 
+        # Excel individual (.xls / .xlsx)
         elif excel_files:
             uploaded_file = excel_files[0]
             st.session_state.selected_file = uploaded_file.name
-            st.session_state.df = pd.read_excel(uploaded_file, engine="openpyxl")
+            st.session_state.df = pd.read_excel(
+                uploaded_file,
+                engine="openpyxl",
+                sheet_name=None  # lê todas as abas
+            )
+            # Se tiver múltiplas planilhas, une todas
+            if isinstance(st.session_state.df, dict):
+                combined = []
+                for name, df_sheet in st.session_state.df.items():
+                    df_sheet['__Planilha__'] = name
+                    combined.append(df_sheet)
+                st.session_state.df = pd.concat(combined, ignore_index=True)
 
+        # PDFs múltiplos
         elif pdf_files:
             st.info("📂 PDFs carregados — perguntas textuais podem ser feitas ao modelo Gemini (sem dataframe).")
             st.session_state.df = None
@@ -76,15 +95,21 @@ if uploaded_files:
 # --- Interação com o Agente Gemini ---
 if st.session_state.df is not None:
     st.success(f"Arquivo '{st.session_state.selected_file}' carregado com sucesso.")
-    st.dataframe(st.session_state.df.head(50))
+    st.dataframe(
+        st.session_state.df,
+        use_container_width=True,
+        height=800  # tabela rolável grande
+    )
+
+    st.write(f"**Total de linhas carregadas:** {len(st.session_state.df):,}")
 
     user_question = st.text_input(
         "Faça uma pergunta sobre os dados:",
-        placeholder="Exemplo: Quais foram os maiores pagamentos? Mostre como tabela."
+        placeholder="Exemplo: Mostre todos os lançamentos de outubro de 2025. Liste como tabela."
     )
 
     if user_question:
-        with st.spinner("O Agente Gemini está analisando os dados..."):
+        with st.spinner("O Agente Gemini está analisando todos os registros (sem limitação de linhas)..."):
             try:
                 llm = ChatGoogleGenerativeAI(
                     model="gemini-2.5-flash",
@@ -93,14 +118,15 @@ if st.session_state.df is not None:
                 )
 
                 AGENT_PREFIX = """
-                Você é um Cientista Contábil e Administrador Financeiro. 
-                Analise planilhas de dados financeiros, fiscais ou empresariais em profundidade.
-
+                Você é um Cientista Contábil e Administrador Financeiro com acesso completo aos dados carregados.
+                Sua função é analisar todos os registros, **sem limitar linhas** ou filtros automáticos.
+                
                 🔹 Regras:
-                1. Quando o usuário pedir "tabela", "listagem" ou "exemplo tabular", retorne em formato de tabela pandas (df.head(), df.groupby(), etc.).
-                2. Use `to_markdown()` apenas se a tabela for textual; caso contrário, entregue um DataFrame.
-                3. Para gráficos, use matplotlib (histograma, barras, linha, pizza).
-                4. Seja técnico, objetivo e contábil — como um analista de custos ou gestor financeiro.
+                1. Sempre processe o dataset completo.
+                2. Para perguntas sobre "tabela" ou "listagem", apresente resultados em formato tabular (pandas DataFrame).
+                3. Use lógica contábil e administrativa para interpretar valores, categorias e datas.
+                4. Gere gráficos quando for útil (barras, linhas, pizza, heatmap).
+                5. Não resuma nem filtre — retorne dados completos.
                 """
 
                 agent = create_pandas_dataframe_agent(
@@ -117,24 +143,23 @@ if st.session_state.df is not None:
                 response = agent.invoke({"input": user_question})
                 output_text = response.get("output", "")
 
-                # --- NOVO: Detecção e exibição automática de tabelas ---
+                # Exibir tabela se houver formato tabular
                 try:
-                    # tenta converter a resposta textual em DataFrame se parecer uma tabela
                     if "|" in output_text and "---" in output_text:
                         table_df = pd.read_csv(StringIO(output_text.replace("|", ",")))
                         st.write("📊 **Tabela Gerada:**")
-                        st.dataframe(table_df)
+                        st.dataframe(table_df, use_container_width=True)
                     else:
-                        st.success("📊 Resposta do Agente:")
+                        st.success("📈 Resposta do Agente:")
                         st.write(output_text)
                 except Exception:
-                    st.success("📊 Resposta do Agente:")
+                    st.success("📈 Resposta do Agente:")
                     st.write(output_text)
 
                 fig = plt.gcf()
                 if len(fig.get_axes()) > 0:
                     st.write("---")
-                    st.subheader("📈 Visualização Gerada")
+                    st.subheader("📊 Visualização Gerada")
                     st.pyplot(fig)
 
             except Exception as e:
@@ -168,7 +193,3 @@ elif uploaded_files and any(f.name.endswith(".pdf") for f in uploaded_files):
 
 else:
     st.info("Aguardando o upload de um arquivo (.zip, .csv, .xlsx, .xls ou .pdf) para iniciar a análise.")
-
-
-
-
