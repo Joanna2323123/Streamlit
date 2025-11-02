@@ -12,7 +12,7 @@ st.set_page_config(page_title="Analisador de Dados com Gemini", layout="wide")
 st.title("Análise de Dados com Agente Gemini")
 st.write(
     "Faça o upload de arquivos `.zip`, `.csv`, `.xlsx`, `.xls` ou `.pdf`. "
-    "O agente usará o modelo Gemini do Google para responder perguntas sobre seus dados e gerar visualizações."
+    "O agente usará o modelo Gemini para responder perguntas e gerar visualizações contábeis, administrativas e fiscais."
 )
 
 # --- Chave de API ---
@@ -34,7 +34,7 @@ if 'df' not in st.session_state:
 if 'selected_file' not in st.session_state:
     st.session_state.selected_file = ""
 
-# --- Processamento de Arquivos ---
+# --- Leitura completa de dados ---
 if uploaded_files:
     try:
         pdf_files = [f for f in uploaded_files if f.name.endswith(".pdf")]
@@ -52,9 +52,7 @@ if uploaded_files:
                     if selected_csv:
                         with zip_ref.open(selected_csv) as f:
                             stringio = StringIO(f.read().decode('utf-8'))
-                            st.session_state.df = pd.read_csv(
-                                stringio, low_memory=False, encoding_errors='ignore'
-                            )
+                            st.session_state.df = pd.read_csv(stringio, low_memory=False, encoding_errors='ignore')
                             st.session_state.selected_file = selected_csv
 
         # CSV individual
@@ -62,26 +60,13 @@ if uploaded_files:
             uploaded_file = csv_files[0]
             st.session_state.selected_file = uploaded_file.name
             stringio = StringIO(uploaded_file.getvalue().decode('utf-8', errors='ignore'))
-            st.session_state.df = pd.read_csv(
-                stringio, low_memory=False, encoding_errors='ignore'
-            )
+            st.session_state.df = pd.read_csv(stringio, low_memory=False, encoding_errors='ignore')
 
         # Excel individual (.xls / .xlsx)
         elif excel_files:
             uploaded_file = excel_files[0]
             st.session_state.selected_file = uploaded_file.name
-            st.session_state.df = pd.read_excel(
-                uploaded_file,
-                engine="openpyxl",
-                sheet_name=None  # lê todas as abas
-            )
-            # Se tiver múltiplas planilhas, une todas
-            if isinstance(st.session_state.df, dict):
-                combined = []
-                for name, df_sheet in st.session_state.df.items():
-                    df_sheet['__Planilha__'] = name
-                    combined.append(df_sheet)
-                st.session_state.df = pd.concat(combined, ignore_index=True)
+            st.session_state.df = pd.read_excel(uploaded_file, engine="openpyxl")
 
         # PDFs múltiplos
         elif pdf_files:
@@ -94,76 +79,83 @@ if uploaded_files:
 
 # --- Interação com o Agente Gemini ---
 if st.session_state.df is not None:
+    df = st.session_state.df
     st.success(f"Arquivo '{st.session_state.selected_file}' carregado com sucesso.")
-    st.dataframe(
-        st.session_state.df,
-        use_container_width=True,
-        height=800  # tabela rolável grande
-    )
-
-    st.write(f"**Total de linhas carregadas:** {len(st.session_state.df):,}")
+    st.dataframe(df, use_container_width=True, height=700)
+    st.write(f"**Total de linhas carregadas:** {len(df):,}")
 
     user_question = st.text_input(
         "Faça uma pergunta sobre os dados:",
-        placeholder="Exemplo: Mostre todos os lançamentos de outubro de 2025. Liste como tabela."
+        placeholder="Exemplo: Classifique os lançamentos como Vale, Empréstimo ou Adiantamento em tabela."
     )
 
     if user_question:
-        with st.spinner("O Agente Gemini está analisando todos os registros (sem limitação de linhas)..."):
-            try:
-                llm = ChatGoogleGenerativeAI(
-                    model="gemini-2.5-flash",
-                    temperature=0,
-                    google_api_key=google_api_key
-                )
+        with st.spinner("O Agente está analisando seus dados..."):
+            llm = ChatGoogleGenerativeAI(
+                model="gemini-2.5-flash",
+                temperature=0,
+                google_api_key=google_api_key
+            )
 
-                AGENT_PREFIX = """
-                Você é um Cientista Contábil e Administrador Financeiro com acesso completo aos dados carregados.
-                Sua função é analisar todos os registros, **sem limitar linhas** ou filtros automáticos.
-                
-                🔹 Regras:
-                1. Sempre processe o dataset completo.
-                2. Para perguntas sobre "tabela" ou "listagem", apresente resultados em formato tabular (pandas DataFrame).
-                3. Use lógica contábil e administrativa para interpretar valores, categorias e datas.
-                4. Gere gráficos quando for útil (barras, linhas, pizza, heatmap).
-                5. Não resuma nem filtre — retorne dados completos.
-                """
+            # Se o usuário pedir classificação -> tratamos localmente
+            if "classifique" in user_question.lower() or "classificação" in user_question.lower():
+                if "Descrição" in df.columns or "descrição" in df.columns:
+                    desc_col = "Descrição" if "Descrição" in df.columns else "descrição"
+                    classificacoes = []
 
-                agent = create_pandas_dataframe_agent(
-                    llm,
-                    st.session_state.df,
-                    prefix=AGENT_PREFIX,
-                    verbose=False,
-                    agent_type="openai-tools",
-                    handle_parsing_errors=True,
-                    allow_dangerous_code=True,
-                )
+                    # Lógica simples: classificar por palavra-chave
+                    for texto in df[desc_col].astype(str):
+                        texto_lower = texto.lower()
+                        if "vale" in texto_lower:
+                            classificacoes.append("Vale / Adiantamento de pagamento")
+                        elif "emprest" in texto_lower:
+                            classificacoes.append("Empréstimo / Reembolso")
+                        elif "adiant" in texto_lower:
+                            classificacoes.append("Adiantamento")
+                        elif "salário" in texto_lower or "pagamento" in texto_lower:
+                            classificacoes.append("Despesa / Pagamento")
+                        elif "contabilidade" in texto_lower or "taxa" in texto_lower:
+                            classificacoes.append("Serviço / Custo Operacional")
+                        else:
+                            classificacoes.append("Outros")
 
-                plt.close('all')
-                response = agent.invoke({"input": user_question})
-                output_text = response.get("output", "")
+                    df["Classificação Automática"] = classificacoes
+                    st.success("✅ Classificação automática concluída.")
+                    st.dataframe(df[[desc_col, "Classificação Automática"]], use_container_width=True)
+                else:
+                    st.warning("Não foi possível encontrar uma coluna de descrição para classificar.")
 
-                # Exibir tabela se houver formato tabular
+            else:
+                # Pergunta analítica normal via Gemini
                 try:
-                    if "|" in output_text and "---" in output_text:
-                        table_df = pd.read_csv(StringIO(output_text.replace("|", ",")))
-                        st.write("📊 **Tabela Gerada:**")
-                        st.dataframe(table_df, use_container_width=True)
-                    else:
-                        st.success("📈 Resposta do Agente:")
-                        st.write(output_text)
-                except Exception:
-                    st.success("📈 Resposta do Agente:")
+                    AGENT_PREFIX = """
+                    Você é um Cientista Contábil e Administrador Financeiro. 
+                    Analise planilhas completas, sem limitação de linhas, e gere respostas analíticas, contábeis e administrativas.
+                    """
+                    agent = create_pandas_dataframe_agent(
+                        llm,
+                        df,
+                        prefix=AGENT_PREFIX,
+                        verbose=False,
+                        agent_type="openai-tools",
+                        handle_parsing_errors=True,
+                        allow_dangerous_code=True,
+                    )
+
+                    plt.close('all')
+                    response = agent.invoke({"input": user_question})
+                    output_text = response.get("output", "Não foi possível gerar uma resposta.")
+
+                    st.success("📊 Resposta do Agente:")
                     st.write(output_text)
 
-                fig = plt.gcf()
-                if len(fig.get_axes()) > 0:
-                    st.write("---")
-                    st.subheader("📊 Visualização Gerada")
-                    st.pyplot(fig)
-
-            except Exception as e:
-                st.error(f"Ocorreu um erro durante a execução do agente: {e}")
+                    fig = plt.gcf()
+                    if len(fig.get_axes()) > 0:
+                        st.write("---")
+                        st.subheader("📈 Visualização Gerada")
+                        st.pyplot(fig)
+                except Exception as e:
+                    st.error(f"Ocorreu um erro durante a execução do agente: {e}")
 
 elif uploaded_files and any(f.name.endswith(".pdf") for f in uploaded_files):
     user_question = st.text_input(
@@ -178,13 +170,11 @@ elif uploaded_files and any(f.name.endswith(".pdf") for f in uploaded_files):
                     temperature=0,
                     google_api_key=google_api_key
                 )
-
                 full_text = ""
                 for pdf in [f for f in uploaded_files if f.name.endswith(".pdf")]:
                     reader = PdfReader(pdf)
                     for page in reader.pages:
                         full_text += page.extract_text() or ""
-
                 response = llm.invoke(f"Responda com base neste texto:\n{full_text}\n\nPergunta: {user_question}")
                 st.success("📘 Resposta do Agente:")
                 st.write(response.content)
@@ -193,3 +183,4 @@ elif uploaded_files and any(f.name.endswith(".pdf") for f in uploaded_files):
 
 else:
     st.info("Aguardando o upload de um arquivo (.zip, .csv, .xlsx, .xls ou .pdf) para iniciar a análise.")
+
