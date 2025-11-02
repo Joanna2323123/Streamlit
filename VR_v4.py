@@ -30,10 +30,10 @@ except (KeyError, FileNotFoundError):
     st.error("Chave de API do Google não encontrada. Configure-a nos 'Secrets' do Streamlit Cloud.")
     st.stop()
 
-# --- Upload de Arquivo ---
-uploaded_file = st.file_uploader(
-    "Envie um arquivo (.zip, .csv ou .pdf)",
-    type=["zip", "csv", "pdf"]
+uploaded_files = st.file_uploader(
+    "Envie um ou mais arquivos (.zip, .csv ou .pdf)",
+    type=["zip", "csv", "pdf"],
+    accept_multiple_files=True
 )
 
 if 'df' not in st.session_state:
@@ -41,54 +41,45 @@ if 'df' not in st.session_state:
 if 'selected_csv' not in st.session_state:
     st.session_state.selected_csv = ""
 
-# --- Tratamento dos tipos de arquivo ---
-if uploaded_file:
+if uploaded_files:
     try:
-        file_name = uploaded_file.name
+        # Se o usuário enviar vários PDFs, vamos iterar por eles
+        pdf_files = [f for f in uploaded_files if f.name.endswith(".pdf")]
+        zip_files = [f for f in uploaded_files if f.name.endswith(".zip")]
+        csv_files = [f for f in uploaded_files if f.name.endswith(".csv")]
 
-        # 1️⃣ Caso ZIP
-        if file_name.endswith(".zip"):
+        # 🔹 ZIP (permanece igual)
+        if zip_files:
+            uploaded_file = zip_files[0]
             with zipfile.ZipFile(uploaded_file, "r") as zip_ref:
-                csv_files = [f for f in zip_ref.namelist() if f.endswith('.csv')]
-                if not csv_files:
-                    st.warning("O arquivo ZIP não contém CSVs.")
-                    st.session_state.df = None
-                else:
-                    selected_csv = st.selectbox("Selecione um arquivo CSV para analisar:", csv_files)
+                csv_inside = [f for f in zip_ref.namelist() if f.endswith('.csv')]
+                if csv_inside:
+                    selected_csv = st.selectbox("Selecione um CSV dentro do ZIP:", csv_inside)
                     if selected_csv:
-                        st.session_state.selected_csv = selected_csv
                         with zip_ref.open(selected_csv) as f:
                             stringio = StringIO(f.read().decode('utf-8'))
                             st.session_state.df = pd.read_csv(stringio)
+                            st.session_state.selected_csv = selected_csv
 
-        # 2️⃣ Caso CSV individual
-        elif file_name.endswith(".csv"):
-            st.session_state.selected_csv = file_name
+        # 🔹 CSV individual
+        elif csv_files:
+            uploaded_file = csv_files[0]
+            st.session_state.selected_csv = uploaded_file.name
             stringio = StringIO(uploaded_file.getvalue().decode('utf-8'))
             st.session_state.df = pd.read_csv(stringio)
 
-        # 3️⃣ Caso PDF
-        elif file_name.endswith(".pdf"):
-            reader = PdfReader(uploaded_file)
-            text = ""
-            for page in reader.pages:
-                text += page.extract_text() or ""
-            st.text_area("📄 Conteúdo extraído do PDF:", text[:4000], height=300)
+        # 🔹 Vários PDFs (novo comportamento)
+        elif pdf_files:
+            st.subheader("📄 PDFs carregados:")
+            for pdf in pdf_files:
+                st.write(f"- {pdf.name}")
             st.session_state.df = None
-            st.info("PDF carregado — perguntas textuais podem ser feitas ao modelo Gemini (sem dataframe).")
+            st.info("PDFs carregados — perguntas textuais podem ser feitas ao modelo Gemini (sem dataframe).")
 
     except Exception as e:
-        st.error(f"Erro ao processar o arquivo: {e}")
+        st.error(f"Erro ao processar os arquivos: {e}")
         st.session_state.df = None
 
-# --- Interação com o Agente ---
-if st.session_state.df is not None:
-    st.success(f"Arquivo '{st.session_state.selected_csv}' carregado. Visualizando as 5 primeiras linhas:")
-    st.dataframe(st.session_state.df)
-    user_question = st.text_input(
-        "Faça uma pergunta sobre os dados:",
-        placeholder="Qual a correlação entre as variáveis?"
-    )
     if user_question:
         with st.spinner("O Agente Gemini está pensando..."):
             try:
@@ -152,5 +143,6 @@ elif uploaded_file and uploaded_file.name.endswith(".pdf"):
 
 else:
     st.info("Aguardando o upload de um arquivo (.zip, .csv ou .pdf) para iniciar a análise.")
+
 
 
