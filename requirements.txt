@@ -4,6 +4,7 @@ matplotlib
 scikit-learn
 tabulate
 PyPDF2>=3.0.0
+plotly
 
 # --- Pacotes de IA (Versões Pinadas) ---
 pydantic>=1.10.0,<3.0.0
@@ -12,4 +13,5 @@ langchain-core>=0.1.0
 langchain-experimental>=0.0.50
 langchain-google-genai>=0.1.0
 google-generativeai>=0.4.0
+
 
