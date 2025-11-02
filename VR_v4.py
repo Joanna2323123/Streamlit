@@ -68,12 +68,7 @@ if uploaded_files:
             st.session_state.df = pd.read_csv(stringio)
 
         # PDFs múltiplos
-        elif pdf_files:
-            st.subheader("📄 PDFs carregados:")
-            for pdf in pdf_files:
-                st.write(f"- {pdf.name}")
             st.session_state.df = None
-            st.info("PDFs carregados — perguntas textuais podem ser feitas ao modelo Gemini (sem dataframe).")
     except Exception as e:
         st.error(f"Erro ao processar os arquivos: {e}")
         st.session_state.df = None
@@ -161,6 +156,7 @@ elif uploaded_files and any(f.name.endswith(".pdf") for f in uploaded_files):
 
 else:
     st.info("Aguardando o upload de um arquivo (.zip, .csv ou .pdf) para iniciar a análise.")
+
 
 
 
