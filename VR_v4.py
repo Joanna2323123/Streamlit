@@ -16,7 +16,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Adiciona um estilo customizado para o tema escuro e visual mais limpo
+# Adiciona um estilo customizado para o tema escuro e visual mais limpo (CSS)
 st.markdown("""
     <style>
         /* Fundo principal escuro */
@@ -55,7 +55,7 @@ if 'df' not in st.session_state:
 if 'selected_csv' not in st.session_state:
     st.session_state.selected_csv = ""
 
-# --- 3. Chave de API (Garantir que está no secrets.toml) ---
+# --- 3. Chave de API ---
 try:
     google_api_key = st.secrets["GOOGLE_API_KEY"]
 except (KeyError, FileNotFoundError):
@@ -90,7 +90,7 @@ def process_uploaded_files(uploaded_files):
                 selected_csv = st.selectbox("Selecione um CSV dentro do ZIP:", csv_inside, key="zip_select")
                 if selected_csv:
                     with zip_ref.open(selected_csv) as f:
-                        # Tenta ler com utf-8, se falhar, tenta latin1
+                        # Tenta ler com utf-8, se falhar, tenta latin1 para compatibilidade
                         try:
                             stringio = StringIO(f.read().decode('utf-8'))
                             st.session_state.df = pd.read_csv(stringio)
@@ -142,19 +142,20 @@ if st.session_state.df is not None:
         # --- LÓGICA DINÂMICA PARA VALORES ---
         valor_total_nfe = "N/A"
         icms_index = "N/A"
-        
+        value_col_name = "Valor (Números)" # Nome padrão
+
         if len(numeric_cols) > 0:
             # Usa a soma da primeira coluna numérica como 'Valor Total'
             value_col_name = numeric_cols[0] 
             total_value = df[value_col_name].sum()
+            # Formatação para moeda BR
             valor_total_nfe = f"R$ {total_value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
             
             # KPI de exemplo (Índice de Conformidade) - SIMULADO
-            # Idealmente, aqui entraria a lógica de negócio do seu projeto.
             icms_compliance_rate = 0.95 
             icms_index = f"{icms_compliance_rate * 100:.1f}%"
             
-        # Simulação de Risco (Depende de regras de negócio, mas pode ser simulado)
+        # Simulação de Risco (Dinâmico, baseado na quantidade de dados)
         risco_tributario = "Médio" if total_docs > 5000 and len(numeric_cols) > 0 else "Baixo"
         # ------------------------------------
 
@@ -162,65 +163,73 @@ if st.session_state.df is not None:
             st.metric("Documentos Válidos", total_docs)
             
         with kpi_col2:
-            st.metric(f"Valor Total ({value_col_name if len(numeric_cols)>0 else 'Sem Números'})", valor_total_nfe)
+            st.metric(f"Valor Total ({value_col_name})", valor_total_nfe)
 
         with kpi_col3:
             st.metric("Índice Conformidade ICMS (Sim.)", icms_index, delta="0.5%", delta_color="normal")
         
         with kpi_col4:
-            # Usando markdown para destacar o "nível de risco" (como na imagem)
-            color = "red" if risco_tributario == "Médio" else "green"
+            # Destaque de Risco
+            color = "orange" if risco_tributario == "Médio" else "green"
             st.markdown("Nível Risco Tributário (Sim.)")
             st.markdown(f'<p style="color: {color}; font-size: 24px; font-weight: bold;">{risco_tributario}</p>', unsafe_allow_html=True)
             
         st.markdown("---")
         
-        # 7.1.2. Gráfico de Tendência DINÂMICO (Plotly)
-        st.subheader("📈 Tendência dos Dados")
+        # 7.1.2. Gráfico de Tendência DINÂMICO e AGREGADO (Mensal)
+        st.subheader("📈 Tendência do Valor Total (Mensal)")
+
+        df_to_plot = df.copy()
         
-        if len(numeric_cols) > 0 and len(df) > 1:
+        # 1. Tenta identificar Coluna de Data/Tempo
+        date_cols = [c for c in df_to_plot.columns if any(keyword in c.lower() for keyword in ['data', 'emissao', 'mes', 'dt'])]
+        
+        # 2. Tenta identificar Coluna de Valor
+        value_cols = [c for c in df_to_plot.columns if any(keyword in c.lower() for keyword in ['valor', 'total', 'preco'])]
+        
+        # 3. Lógica de Plotagem
+        if date_cols and value_cols:
+            date_col = date_cols[0]
+            value_col = value_cols[0]
+            
             try:
-                value_col = numeric_cols[0]
-                df_to_plot = df.copy()
+                # Conversão robusta da coluna de data
+                df_to_plot[date_col] = pd.to_datetime(df_to_plot[date_col], errors='coerce', dayfirst=True)
+                df_to_plot.dropna(subset=[date_col, value_col], inplace=True)
                 
-                # Se houver uma coluna de data/tempo (exemplo 'Data' ou 'Mês'), use-a
-                date_cols = [c for c in df_to_plot.columns if 'data' in c.lower() or 'mes' in c.lower()]
+                # Agregação Mensal
+                df_to_plot['Período'] = df_to_plot[date_col].dt.to_period('M')
                 
-                if date_cols:
-                    x_col = date_cols[0]
-                    # Tenta converter para datetime
-                    try:
-                        df_to_plot[x_col] = pd.to_datetime(df_to_plot[x_col], errors='coerce')
-                        df_to_plot.dropna(subset=[x_col], inplace=True)
-                    except:
-                         x_col = 'Registro'
-                         df_to_plot['Registro'] = df_to_plot.index
-                else:
-                    x_col = 'Registro'
-                    df_to_plot['Registro'] = df_to_plot.index
-                    
+                df_mensal = df_to_plot.groupby('Período')[value_col].sum().reset_index()
+                df_mensal['Período'] = df_mensal['Período'].astype(str) # Converte para string para Plotly
                 
-                fig = px.line(df_to_plot, x=x_col, y=value_col, 
-                              title=f'Tendência de "{value_col}"',
+                # Gera o Gráfico
+                fig = px.line(df_mensal, x='Período', y=value_col, 
+                              title=f'Soma Mensal de "{value_col}"',
                               template='plotly_dark',
-                              labels={x_col: x_col, value_col: value_col})
-                st.plotly_chart(fig, use_container_width=True)
+                              labels={'Período': 'Mês de Referência', value_col: f'Soma de {value_col}'})
                 
+                # Adiciona formatação para o eixo Y
+                fig.update_yaxes(tickprefix="R$ ", separatethousands=True)
+                
+                st.plotly_chart(fig, use_container_width=True)
+
             except Exception as e:
-                st.warning(f"Não foi possível gerar um gráfico de tendência automático: {e}")
-                st.info("Para gráficos mais complexos, use o **Chat Interativo com IA** (ex: 'Me mostre a distribuição da coluna X').")
+                st.warning(f"Erro ao processar e plotar os dados mensais: Verifique se '{date_col}' e '{value_col}' têm formatos válidos. Erro: {e}")
+                st.info("Para gráficos mais complexos, use o **Chat Interativo com IA**.")
+                
         else:
-            st.info("Não foi possível gerar um gráfico de tendência: O DataFrame não possui colunas numéricas ou tem apenas uma linha.")
+            st.info("Não foi possível gerar um gráfico de tendência automático. Requisito: Coluna de Data/Emissão e Coluna de Valor/Total.")
 
 
-        # 7.1.3. Insights Acionáveis (do arquivo de imagem)
+        # 7.1.3. Insights Acionáveis (Exemplo)
         st.subheader("💡 Insights Acionáveis (Exemplo)")
         st.markdown("""
             <div class="insight-box">
                 * **Priorizar** a revisão das operações interestaduais para assegurar o correto recolhimento do **DIFAL**.
                 * Auditar as Notas Fiscais com **"NATUREZA DE OPERAÇÃO"** de **'REMESSA'** ou **'RETORNO'** para conformidade.
-                * Implementar um sistema de conciliação automática para corrigir inconsistências decorrentes de truncamento.
-                * Um **"Nível de Risco Tributário baixo"** é positivo, mas requer validação periódica das regras fiscais.
+                * Implementar um sistema de conciliação automática para corrigir inconsistências.
+                * O **Nível de Risco** requer validação periódica das regras fiscais.
             </div>
         """, unsafe_allow_html=True)
 
@@ -231,7 +240,7 @@ if st.session_state.df is not None:
         
         user_question = st.text_input(
             "Pergunte sobre os dados:",
-            placeholder="Exemplo: Liste os 5 maiores valores da coluna 'Valor Total NF-e'."
+            placeholder="Exemplo: Qual a média da coluna 'Valor Total'?"
         )
 
         if user_question:
@@ -280,11 +289,9 @@ if st.session_state.df is not None:
 
 # --- 8. Seção para Análise de PDFs (Texto) ---
 elif uploaded_files and any(f.name.endswith(".pdf") for f in uploaded_files):
-    # O código aqui para PDFs continua usando o Gemini para análise textual
     st.header("Análise de Documentos (PDF)")
     st.markdown("Você carregou documentos PDF. Use o chat para perguntas sobre o texto.")
     
-    # ... (O restante do código para PDF é o mesmo, pois já era dinâmico)
     user_question = st.text_input(
         "Pergunte algo sobre o texto dos PDFs:",
         placeholder="Exemplo: Resuma as principais conclusões do documento."
